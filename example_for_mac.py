@@ -1,8 +1,18 @@
 import argparse
+import random
 import re
+import numpy as np
 import torch
 import torchaudio as ta
 from chatterbox.tts import ChatterboxTTS
+
+
+def set_seed(seed: int):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    random.seed(seed)
+    np.random.seed(seed)
 
 # Detect device (Mac with M1/M2/M3/M4)
 device = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -77,7 +87,11 @@ parser.add_argument("--output", "-o", default="output.wav", help="Output WAV fil
 parser.add_argument("--voice", "-v", default=None, help="Path to audio prompt WAV file for voice cloning")
 parser.add_argument("--exaggeration", type=float, default=1.0)
 parser.add_argument("--cfg-weight", type=float, default=0.5)
+parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility (0 = random)")
 args = parser.parse_args()
+
+if args.seed != 0:
+    set_seed(args.seed)
 
 with open(args.input_file, "r") as f:
     raw = f.read()
