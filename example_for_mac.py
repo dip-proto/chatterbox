@@ -1,4 +1,5 @@
 import argparse
+import os
 import random
 import re
 import numpy as np
@@ -88,6 +89,7 @@ parser.add_argument("--voice", "-v", default=None, help="Path to audio prompt WA
 parser.add_argument("--exaggeration", type=float, default=1.0)
 parser.add_argument("--cfg-weight", type=float, default=0.5)
 parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility (0 = random)")
+parser.add_argument("--split", action="store_true", help="Split input on --- delimiters and write one WAV per section")
 args = parser.parse_args()
 
 if args.seed != 0:
@@ -96,23 +98,42 @@ if args.seed != 0:
 with open(args.input_file, "r") as f:
     raw = f.read()
 
-text = clean_text(raw)
-chunks = chunk_text(text)
-print(f"Synthesizing {len(chunks)} chunks...")
-
 model = ChatterboxTTS.from_pretrained(device=device)
 
-wavs = []
-for i, chunk in enumerate(chunks):
-    print(f"  [{i+1}/{len(chunks)}] {chunk[:70]}...")
-    wav = model.generate(
-        chunk,
-        audio_prompt_path=args.voice if i == 0 else None,
-        exaggeration=args.exaggeration,
-        cfg_weight=args.cfg_weight,
-    )
-    wavs.append(wav)
 
-combined = torch.cat(wavs, dim=-1)
-ta.save(args.output, combined, model.sr)
-print(f"Saved to {args.output}")
+def synthesize_text(text, voice=None):
+    chunks = chunk_text(text)
+    if not chunks:
+        return None
+    wavs = []
+    for i, chunk in enumerate(chunks):
+        print(f"  [{i+1}/{len(chunks)}] {chunk[:70]}...")
+        wav = model.generate(
+            chunk,
+            audio_prompt_path=voice if i == 0 else None,
+            exaggeration=args.exaggeration,
+            cfg_weight=args.cfg_weight,
+        )
+        wavs.append(wav)
+    return torch.cat(wavs, dim=-1)
+
+
+if args.split:
+    sections = re.split(r'\n---+\n', raw)
+    sections = [clean_text(s) for s in sections]
+    sections = [s for s in sections if s.strip()]
+    base, ext = os.path.splitext(args.output)
+    print(f"Split mode: {len(sections)} sections found")
+    for idx, section in enumerate(sections):
+        out_path = f"{base}_{idx+1:02d}{ext}"
+        print(f"\n=== Section {idx+1}/{len(sections)} -> {out_path} ===")
+        combined = synthesize_text(section, voice=args.voice)
+        if combined is not None:
+            ta.save(out_path, combined, model.sr)
+            print(f"Saved {out_path}")
+else:
+    text = clean_text(raw)
+    print(f"Synthesizing...")
+    combined = synthesize_text(text, voice=args.voice)
+    ta.save(args.output, combined, model.sr)
+    print(f"Saved to {args.output}")
